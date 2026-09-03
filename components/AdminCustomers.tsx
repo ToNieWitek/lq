@@ -31,10 +31,20 @@ export default function AdminCustomers({ customers, setCustomers, orders }: Prop
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const rawLogin = form.email.trim().toLowerCase();
+      // Jeśli administrator podał sam login bez @ (np. "tomek"), zamień na "tomek@lq.local" dla Supabase Auth
+      const formattedEmail = rawLogin.includes("@") ? rawLogin : `${rawLogin}@lq.local`;
+
+      const payload = {
+        ...form,
+        email: formattedEmail,
+        displayName: form.displayName || rawLogin,
+      };
+
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -43,8 +53,8 @@ export default function AdminCustomers({ customers, setCustomers, orders }: Prop
       }
       const newCust: Profile = {
         id: data.user?.id || "demo-cust-" + Date.now(),
-        email: form.email,
-        display_name: form.displayName || form.email.split("@")[0],
+        email: formattedEmail,
+        display_name: form.displayName || rawLogin,
         role: "customer",
         notes: form.notes,
         created_at: new Date().toISOString(),
@@ -52,7 +62,7 @@ export default function AdminCustomers({ customers, setCustomers, orders }: Prop
       const updated = [newCust, ...customers];
       setCustomers(updated);
       localStorage.setItem("demo_customers", JSON.stringify(updated));
-      alert(`Utworzono konto!\nLogin: ${form.email}\nHasło: ${form.password}`);
+      alert(`Utworzono konto kupującego!\nLogin: ${rawLogin}\nHasło: ${form.password}`);
       setShowModal(false);
       setForm({ email: "", displayName: "", password: "", notes: "" });
     } catch (err) {
@@ -137,14 +147,16 @@ export default function AdminCustomers({ customers, setCustomers, orders }: Prop
             </h3>
             <form onSubmit={handleCreateCustomer} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">Login / Email</label>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Login kupującego (np. marek lub marek@poczta.pl)
+                </label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  placeholder="klient@firma.pl"
+                  placeholder="np. marek lub klient1"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs"
+                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
                 />
               </div>
               <div>

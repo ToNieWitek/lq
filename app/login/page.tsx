@@ -20,7 +20,8 @@ export default function LoginPage() {
     setErrorMsg("");
     setLoading(true);
 
-    const trimmedEmail = email.trim().toLowerCase();
+    const rawInput = email.trim().toLowerCase();
+    const trimmedEmail = rawInput.includes("@") ? rawInput : `${rawInput}@lq.local`;
     const trimmedPass = password.trim();
 
     try {
@@ -32,7 +33,7 @@ export default function LoginPage() {
         });
 
         if (error) {
-          throw new Error("Nieprawidłowy e-mail lub hasło.");
+          throw new Error("Nieprawidłowy login lub hasło.");
         }
 
         if (data.user) {
