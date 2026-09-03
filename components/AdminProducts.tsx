@@ -153,30 +153,26 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
     };
 
     if (editingProduct) {
+      const updatedProduct: Product = {
+        ...editingProduct,
+        ...productPayload,
+      };
       const updatedList = products.map((p) =>
-        p.id === editingProduct.id ? { ...p, ...productPayload } : p
+        p.id === editingProduct.id ? updatedProduct : p
       );
       setProducts(updatedList);
       localStorage.setItem("demo_products", JSON.stringify(updatedList));
-      try {
-        await supabase.from("products").update(productPayload).eq("id", editingProduct.id);
-      } catch (err) {
-        console.error(err);
-      }
+      await upsertProductDB(updatedProduct);
     } else {
       const newProd: Product = {
-        id: "prod-" + Date.now(),
+        id: "prod-" + Date.now() + "-" + Math.random().toString(36).substring(2, 6),
         ...productPayload,
         created_at: new Date().toISOString(),
       };
       const updatedList = [newProd, ...products];
       setProducts(updatedList);
       localStorage.setItem("demo_products", JSON.stringify(updatedList));
-      try {
-        await supabase.from("products").insert([productPayload]);
-      } catch (err) {
-        console.error(err);
-      }
+      await upsertProductDB(newProd);
     }
     setShowModal(false);
     setEditingProduct(null);

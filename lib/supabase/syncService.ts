@@ -56,9 +56,12 @@ export async function getProductsDB(brandId?: string): Promise<Product[]> {
 
 export async function upsertProductDB(product: Product) {
   try {
-    await supabase.from("products").upsert(product);
+    const { error } = await supabase.from("products").upsert(product);
+    if (error) {
+      console.error("upsertProductDB Supabase error:", error);
+    }
   } catch (e) {
-    console.error("upsertProductDB error:", e);
+    console.error("upsertProductDB exception:", e);
   }
 }
 
