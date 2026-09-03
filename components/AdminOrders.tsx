@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useMemo } from "react";
-import { Order, OrderItem, Profile, StatusDefinition, OrderStatusHistoryItem } from "@/types";
+import { Order, OrderItem, Profile, StatusDefinition, OrderStatusHistoryItem, Product } from "@/types";
 import { renderStatusIcon, getStatusColorClass } from "@/components/StatusIconHelper";
 import { upsertOrderDB, deleteOrderDB, deleteBulkOrdersDB } from "@/lib/supabase/syncService";
 import {
@@ -17,6 +17,8 @@ import {
   ChevronDown,
   ChevronUp,
   Package,
+  ShoppingBag,
+  X,
 } from "lucide-react";
 
 interface Props {
@@ -24,32 +26,26 @@ interface Props {
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   customers: Profile[];
   statuses: StatusDefinition[];
+  products?: Product[];
 }
 
-export default function AdminOrders({ orders, setOrders, customers, statuses }: Props) {
-  // Modal nowego zamówienia
-  const [showNewOrderModal, setShowNewOrderModal] = useState(false);
-  const [newOrderForm, setNewOrderForm] = useState<{
-    customer_id: string;
-    product_name: string;
-    quantity: number;
-    brand: string;
-    nicotine_strength: string;
-    volume_ml: string;
-    revenue: number;
-    initial_status: string;
-    notes: string;
-  }>({
-    customer_id: "",
-    product_name: "",
-    quantity: 1,
-    brand: "Elfliq",
-    nicotine_strength: "50MG",
-    volume_ml: "30ML",
-    revenue: 0,
-    initial_status: statuses[0]?.name || "Przyjęte",
-    notes: "",
-  });
+export default function AdminOrders({ orders, setOrders, customers, statuses, products = [] }: Props) {
+  // Modal tworzenia / edycji zamówienia
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+
+  // Pozycje w edytowanym/tworzonym zamówieniu
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [orderCustomerId, setOrderCustomerId] = useState("");
+  const [orderRevenue, setOrderRevenue] = useState<number>(0);
+  const [orderStatus, setOrderStatus] = useState<string>(statuses[0]?.name || "Przyjęte");
+  const [orderNotes, setOrderNotes] = useState("");
+
+  // Wyszukiwarka produktów w selektorze zamówienia
+  const [productSearch, setProductSearch] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProductQuantity, setSelectedProductQuantity] = useState<number>(1);
+  const [customProductName, setCustomProductName] = useState("");
 
   // Modal dodawania statusu do pojedynczego lub wielu zamówień
   const [activeOrderForStatus, setActiveOrderForStatus] = useState<Order | null>(null);
@@ -84,60 +80,133 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
   // Rozwijanie szczegółów wiersza
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
-  // Zapis nowego zamówienia
-  const handleSaveNewOrder = (e: React.FormEvent) => {
+  // Otwieranie modalu tworzenia nowego zamówienia
+  const handleOpenCreateOrder = () => {
+    setEditingOrder(null);
+    setOrderCustomerId(customers[0]?.id || "");
+    setOrderRevenue(0);
+    setOrderStatus(statuses[0]?.name || "Przyjęte");
+    setOrderNotes("");
+    setOrderItems([]);
+    setProductSearch("");
+    setSelectedProduct(null);
+    setSelectedProductQuantity(1);
+    setShowOrderModal(true);
+  };
+
+  // Otwieranie modalu edycji istniejącego zamówienia
+  const handleOpenEditOrder = (o: Order) => {
+    setEditingOrder(o);
+    setOrderCustomerId(o.customer_id || "");
+    setOrderRevenue(o.revenue || 0);
+    setOrderStatus(o.status || statuses[0]?.name || "Przyjęte");
+    setOrderNotes(o.notes || "");
+    setOrderItems(o.items || []);
+    setProductSearch("");
+    setSelectedProduct(null);
+    setSelectedProductQuantity(1);
+    setShowOrderModal(true);
+  };
+
+  // Dodawanie wybranego produktu z wyszukiwarki do listy pozycji zamówienia
+  const handleAddProductToOrder = () => {
+    if (selectedProduct) {
+      const newItem: OrderItem = {
+        product_name: selectedProduct.name,
+        quantity: Math.max(1, Number(selectedProductQuantity) || 1),
+        brand: selectedProduct.brand_id.toUpperCase(),
+        nicotine_strength: selectedProduct.nicotine_strength || "50MG",
+        volume_ml: selectedProduct.volume_ml || "30ML",
+      };
+      setOrderItems((prev) => [...prev, newItem]);
+      setSelectedProduct(null);
+      setProductSearch("");
+      setSelectedProductQuantity(1);
+    } else if (customProductName.trim()) {
+      const newItem: OrderItem = {
+        product_name: customProductName.trim(),
+        quantity: Math.max(1, Number(selectedProductQuantity) || 1),
+        brand: "INNY",
+        nicotine_strength: "50MG",
+        volume_ml: "30ML",
+      };
+      setOrderItems((prev) => [...prev, newItem]);
+      setCustomProductName("");
+      setProductSearch("");
+      setSelectedProductQuantity(1);
+    }
+  };
+
+  // Usuwanie pozycji z zamówienia
+  const handleRemoveItemFromOrder = (index: number) => {
+    setOrderItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Zmiana ilości pozycji w zamówieniu
+  const handleUpdateItemQuantity = (index: number, newQty: number) => {
+    if (newQty < 1) return;
+    setOrderItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, quantity: newQty } : item))
+    );
+  };
+
+  // Zapis zamówienia (nowe lub zaktualizowane)
+  const handleSaveOrder = (e: React.FormEvent) => {
     e.preventDefault();
-    const customer = customers.find((c) => c.id === newOrderForm.customer_id);
-    const selectedDef = statuses.find((s) => s.name === newOrderForm.initial_status) || statuses[0];
+    if (orderItems.length === 0) {
+      alert("Dodaj przynajmniej jeden produkt do zamówienia!");
+      return;
+    }
 
-    const initialHistory: OrderStatusHistoryItem = {
-      id: "st-" + Date.now(),
-      name: selectedDef?.name || "Przyjęte",
-      color: selectedDef?.color || "blue",
-      icon: selectedDef?.icon || "Package",
-      date: new Date().toLocaleString("pl-PL"),
-      comment: "Zamówienie zostało utworzone.",
-    };
+    const customer = customers.find((c) => c.id === orderCustomerId);
+    const selectedDef = statuses.find((s) => s.name === orderStatus) || statuses[0];
 
-    const newOrder: Order = {
-      id: "ord-" + Date.now(),
-      order_number: "LQ-" + Math.floor(1000 + Math.random() * 9000),
-      customer_id: newOrderForm.customer_id,
-      customer_name: customer?.display_name || customer?.email || "Klient",
-      customer_email: customer?.email,
-      status: selectedDef?.name || "Przyjęte",
-      status_history: [initialHistory],
-      revenue: Number(newOrderForm.revenue) || 0,
-      items: [
-        {
-          product_name: newOrderForm.product_name,
-          quantity: Number(newOrderForm.quantity) || 1,
-          brand: newOrderForm.brand,
-          nicotine_strength: newOrderForm.nicotine_strength,
-          volume_ml: newOrderForm.volume_ml,
-        },
-      ],
-      notes: newOrderForm.notes,
-      created_at: new Date().toISOString(),
-    };
+    if (editingOrder) {
+      const updatedOrder: Order = {
+        ...editingOrder,
+        customer_id: orderCustomerId,
+        customer_name: customer?.display_name || customer?.email || editingOrder.customer_name || "Klient",
+        customer_email: customer?.email || editingOrder.customer_email,
+        status: selectedDef?.name || orderStatus,
+        revenue: Number(orderRevenue) || 0,
+        items: orderItems,
+        notes: orderNotes,
+      };
+      const updatedList = orders.map((o) => (o.id === editingOrder.id ? updatedOrder : o));
+      setOrders(updatedList);
+      localStorage.setItem("demo_orders", JSON.stringify(updatedList));
+      upsertOrderDB(updatedOrder);
+    } else {
+      const initialHistory: OrderStatusHistoryItem = {
+        id: "st-" + Date.now(),
+        name: selectedDef?.name || "Przyjęte",
+        color: selectedDef?.color || "blue",
+        icon: selectedDef?.icon || "Package",
+        date: new Date().toLocaleString("pl-PL"),
+        comment: "Zamówienie zostało utworzone.",
+      };
 
-    const updated = [newOrder, ...orders];
-    setOrders(updated);
-    localStorage.setItem("demo_orders", JSON.stringify(updated));
-    upsertOrderDB(newOrder);
+      const newOrder: Order = {
+        id: "ord-" + Date.now(),
+        order_number: "LQ-" + Math.floor(1000 + Math.random() * 9000),
+        customer_id: orderCustomerId,
+        customer_name: customer?.display_name || customer?.email || "Klient",
+        customer_email: customer?.email,
+        status: selectedDef?.name || "Przyjęte",
+        status_history: [initialHistory],
+        revenue: Number(orderRevenue) || 0,
+        items: orderItems,
+        notes: orderNotes,
+        created_at: new Date().toISOString(),
+      };
 
-    setShowNewOrderModal(false);
-    setNewOrderForm({
-      customer_id: "",
-      product_name: "",
-      quantity: 1,
-      brand: "Elfliq",
-      nicotine_strength: "50MG",
-      volume_ml: "30ML",
-      revenue: 0,
-      initial_status: statuses[0]?.name || "Przyjęte",
-      notes: "",
-    });
+      const updatedList = [newOrder, ...orders];
+      setOrders(updatedList);
+      localStorage.setItem("demo_orders", JSON.stringify(updatedList));
+      upsertOrderDB(newOrder);
+    }
+
+    setShowOrderModal(false);
   };
 
   // Dodanie etapu do POJEDYNCZEGO zamówienia
@@ -358,11 +427,11 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
         </div>
 
         <button
-          onClick={() => setShowNewOrderModal(true)}
+          onClick={handleOpenCreateOrder}
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Dodaj nowe zamówienie</span>
+          <span>Nowe zamówienie</span>
         </button>
       </div>
 
@@ -661,6 +730,15 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
                         <td className="p-4 text-right">
                           <div className="inline-flex items-center gap-1.5">
                             <button
+                              onClick={() => handleOpenEditOrder(o)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-bold transition-colors cursor-pointer"
+                              title="Edytuj zamówienie i produkty"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Edytuj</span>
+                            </button>
+
+                            <button
                               onClick={() => {
                                 setActiveOrderForStatus(o);
                                 setStatusStepForm({
@@ -731,162 +809,257 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
         </div>
       </div>
 
-      {/* Modal 1: Dodanie pojedynczego nowego zamówienia */}
-      {showNewOrderModal && (
+      {/* Modal 1: Tworzenie lub Edycja zamówienia z wyszukiwarką produktów */}
+      {showOrderModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl">
-            <h3 className="text-lg font-black text-zinc-900 dark:text-white">
-              Stwórz nowe zamówienie
-            </h3>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 max-w-2xl w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div>
+              <h3 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-purple-600" />
+                <span>{editingOrder ? `Edycja zamówienia #${editingOrder.order_number}` : "Stwórz nowe zamówienie"}</span>
+              </h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Wybierz kupującego, wyszukaj produkty z bazy i określ ich ilości.
+              </p>
+            </div>
 
-            <form onSubmit={handleSaveNewOrder} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Kupujący (przypisz do konta)
-                </label>
-                <select
-                  required
-                  value={newOrderForm.customer_id}
-                  onChange={(e) => setNewOrderForm({ ...newOrderForm, customer_id: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
-                >
-                  <option value="">-- Wybierz kupującego --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.display_name} ({c.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSaveOrder} className="space-y-5">
+              {/* Kupujący i Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Marka liquidu
+                    Kupujący (konto)
                   </label>
                   <select
-                    value={newOrderForm.brand}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, brand: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
+                    required
+                    value={orderCustomerId}
+                    onChange={(e) => setOrderCustomerId(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
                   >
-                    <option value="Elfliq">Elfliq</option>
-                    <option value="Vozol">Vozol</option>
-                    <option value="Puffy">Puffy</option>
+                    <option value="">-- Wybierz kupującego --</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.display_name} ({c.email})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Ilość (sztuk)
+                    Status zamówienia
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newOrderForm.quantity}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, quantity: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs"
-                  />
+                  <select
+                    value={orderStatus}
+                    onChange={(e) => setOrderStatus(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
+                  >
+                    {statuses.map((st) => (
+                      <option key={st.id} value={st.name}>
+                        {st.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Smak / Nazwa produktu
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="np. Watermelon, Blue Razz Ice"
-                  value={newOrderForm.product_name}
-                  onChange={(e) => setNewOrderForm({ ...newOrderForm, product_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
-                />
+              {/* SEKACJA: WYSZUKIWARKA PRODUKTÓW I WYBÓR ILOŚCI */}
+              <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3">
+                <span className="text-xs font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block">
+                  Wyszukaj i dodaj produkt do zamówienia
+                </span>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    type="text"
+                    placeholder="Wpisz nazwę smaku lub markę..."
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value);
+                      setSelectedProduct(null);
+                    }}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+
+                  {/* Wyniki wyszukiwania w rozwijanej liście */}
+                  {productSearch.trim().length > 0 && !selectedProduct && (
+                    <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl z-30 divide-y divide-zinc-100 dark:divide-zinc-800">
+                      {products
+                        .filter(
+                          (p) =>
+                            p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                            p.brand_id.toLowerCase().includes(productSearch.toLowerCase())
+                        )
+                        .slice(0, 10)
+                        .map((p) => (
+                          <div
+                            key={p.id}
+                            onClick={() => {
+                              setSelectedProduct(p);
+                              setProductSearch(p.name);
+                            }}
+                            className="p-2.5 hover:bg-purple-50 dark:hover:bg-purple-950/40 cursor-pointer flex items-center justify-between text-xs transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              {p.emoji && <span>{p.emoji}</span>}
+                              <span className="font-bold text-zinc-900 dark:text-zinc-100">{p.name}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 uppercase font-mono">
+                                {p.brand_id}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-zinc-400 font-mono">
+                              {p.nicotine_strength || "50MG"} • {p.volume_ml || "30ML"}
+                            </span>
+                          </div>
+                        ))}
+
+                      {products.filter(
+                        (p) =>
+                          p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                          p.brand_id.toLowerCase().includes(productSearch.toLowerCase())
+                      ).length === 0 && (
+                        <div className="p-3 text-xs text-zinc-400 text-center">
+                          Nie znaleziono w bazie. Wpisz poniżej własną nazwę.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Wybór ilości i przycisk Dodaj */}
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Ilość:</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={selectedProductQuantity}
+                      onChange={(e) => setSelectedProductQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-20 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-center"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddProductToOrder}
+                    disabled={!selectedProduct && !productSearch.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Dodaj do zamówienia</span>
+                  </button>
+
+                  {selectedProduct && (
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+                      ✓ Wybrano: {selectedProduct.name} ({selectedProduct.brand_id.toUpperCase()})
+                    </span>
+                  )}
+                </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Moc (MG)
+              {/* LISTA WYBRANYCH PRODUKTÓW W ZAMÓWIENIU */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                    Produkty w tym zamówieniu ({orderItems.length})
                   </label>
-                  <input
-                    type="text"
-                    placeholder="50MG"
-                    value={newOrderForm.nicotine_strength}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, nicotine_strength: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono"
-                  />
+                  <span className="text-[11px] text-zinc-400 font-mono">
+                    Łącznie sztuk: {orderItems.reduce((acc, it) => acc + (Number(it.quantity) || 1), 0)}
+                  </span>
                 </div>
+
+                {orderItems.length === 0 ? (
+                  <div className="p-6 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 text-center text-xs text-zinc-400">
+                    Brak produktów w zamówieniu. Wyszukaj i dodaj produkt powyżej.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {orderItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <span className="font-bold text-zinc-900 dark:text-zinc-100 block truncate">
+                            {item.product_name}
+                          </span>
+                          <span className="text-[10px] text-zinc-400 font-mono">
+                            {item.brand || "LQ"} • {item.nicotine_strength || "50MG"} • {item.volume_ml || "30ML"}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-xl">
+                            <span className="text-zinc-400 text-[10px]">Ilość:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) => handleUpdateItemQuantity(idx, parseInt(e.target.value) || 1)}
+                              className="w-12 bg-transparent text-center font-mono font-bold focus:outline-none"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItemFromOrder(idx)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                            title="Usuń z zamówienia"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Przychód i notatki */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Pojemność
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="30ML"
-                    value={newOrderForm.volume_ml}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, volume_ml: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                    Przychód (zł)
+                    Przychód (widziany przez klienta, zł)
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="0"
-                    value={newOrderForm.revenue}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, revenue: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono font-bold text-teal-600"
+                    placeholder="0.00"
+                    value={orderRevenue}
+                    onChange={(e) => setOrderRevenue(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono font-bold text-teal-600"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Początkowy status
-                </label>
-                <select
-                  value={newOrderForm.initial_status}
-                  onChange={(e) => setNewOrderForm({ ...newOrderForm, initial_status: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold"
-                >
-                  {statuses.map((st) => (
-                    <option key={st.id} value={st.name}>
-                      {st.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Wiadomość / Notatka dla kupującego (opcjonalnie)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="np. Odbiór w ustalonym miejscu"
-                  value={newOrderForm.notes}
-                  onChange={(e) => setNewOrderForm({ ...newOrderForm, notes: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs"
-                />
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Wiadomość / Notatka dla kupującego
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="np. Odbiór osobisty po 17:00"
+                    value={orderNotes}
+                    onChange={(e) => setOrderNotes(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                 <button
                   type="button"
-                  onClick={() => setShowNewOrderModal(false)}
+                  onClick={() => setShowOrderModal(false)}
                   className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold cursor-pointer"
                 >
                   Anuluj
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer"
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md cursor-pointer transition-all"
                 >
-                  Utwórz zamówienie
+                  {editingOrder ? "Zapisz zmiany w zamówieniu" : "Utwórz zamówienie"}
                 </button>
               </div>
             </form>

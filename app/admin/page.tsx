@@ -235,7 +235,13 @@ export default function AdminDashboardPage() {
       )}
 
       {activeTab === "orders" && (
-        <AdminOrders orders={orders} setOrders={setOrders} customers={customers} statuses={statuses} />
+        <AdminOrders
+          orders={orders}
+          setOrders={setOrders}
+          customers={customers}
+          statuses={statuses}
+          products={products}
+        />
       )}
 
       {activeTab === "statuses" && (
