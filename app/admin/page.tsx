@@ -5,6 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Product, Order, Profile, StatusDefinition, Brand } from "@/types";
 import { INITIAL_PRODUCTS, INITIAL_BRANDS } from "@/lib/initialData";
 import { createClient } from "@/lib/supabase/client";
+import { getBrandsDB } from "@/lib/supabase/syncService";
 import AdminProducts from "@/components/AdminProducts";
 import AdminBrands from "@/components/AdminBrands";
 import AdminOrders from "@/components/AdminOrders";
@@ -48,9 +49,9 @@ export default function AdminDashboardPage() {
 
     // 1. Brands
     try {
-      const { data: bData } = await supabase.from("brands").select("*").order("name");
+      const bData = await getBrandsDB();
       if (bData && bData.length > 0) {
-        setBrands(bData as Brand[]);
+        setBrands(bData);
       } else {
         const localBrands = localStorage.getItem("demo_brands");
         setBrands(localBrands ? JSON.parse(localBrands) : INITIAL_BRANDS);

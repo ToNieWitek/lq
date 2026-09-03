@@ -9,9 +9,25 @@ const supabase = createClient();
 // ==========================================
 export async function getBrandsDB(): Promise<Brand[]> {
   try {
-    const { data, error } = await supabase.from("brands").select("*").order("name");
+    const { data, error } = await supabase.from("brands").select("*");
     if (!error && data && data.length > 0) {
-      return data as Brand[];
+      const orderSetting = await getSettingDB("brands_order", "");
+      if (orderSetting) {
+        try {
+          const orderedIds: string[] = JSON.parse(orderSetting);
+          return (data as Brand[]).sort((a, b) => {
+            const idxA = orderedIds.indexOf(a.id);
+            const idxB = orderedIds.indexOf(b.id);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a.name.localeCompare(b.name, "pl");
+          });
+        } catch {
+          // ignore
+        }
+      }
+      return (data as Brand[]).sort((a, b) => a.name.localeCompare(b.name, "pl"));
     }
   } catch (e) {
     console.warn("getBrandsDB error:", e);

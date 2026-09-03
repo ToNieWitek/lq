@@ -2,7 +2,8 @@
 import React, { useState } from "react";
 import { Brand } from "@/types";
 import { createClient } from "@/lib/supabase/client";
-import { Plus, Trash2, Edit2 } from "lucide-react";
+import { setSettingDB } from "@/lib/supabase/syncService";
+import { Plus, Trash2, Edit2, ArrowUp, ArrowDown } from "lucide-react";
 
 interface Props {
   brands: Brand[];
@@ -97,6 +98,24 @@ export default function AdminBrands({ brands, setBrands }: Props) {
     }
   };
 
+  const moveBrand = (index: number, direction: "up" | "down") => {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= brands.length) return;
+
+    const newBrands = [...brands];
+    const temp = newBrands[index];
+    newBrands[index] = newBrands[targetIndex];
+    newBrands[targetIndex] = temp;
+
+    setBrands(newBrands);
+    localStorage.setItem("demo_brands", JSON.stringify(newBrands));
+
+    // Zapisz kolejność ID marek w ustawieniach Supabase
+    const orderIds = newBrands.map((b) => b.id);
+    localStorage.setItem("brands_order", JSON.stringify(orderIds));
+    setSettingDB("brands_order", JSON.stringify(orderIds));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -148,20 +167,47 @@ export default function AdminBrands({ brands, setBrands }: Props) {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-              <button
-                onClick={() => handleOpenModal(b)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-bold transition-colors cursor-pointer"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edytuj</span>
-              </button>
-              <button
-                onClick={() => handleDelete(b.id)}
-                className="p-2 rounded-xl text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              {/* Przyciski zmiany kolejności */}
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl">
+                <button
+                  type="button"
+                  title="Przesuń wcześniej (w lewo / w górę)"
+                  disabled={brands.indexOf(b) === 0}
+                  onClick={() => moveBrand(brands.indexOf(b), "up")}
+                  className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 text-zinc-600 dark:text-zinc-300 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ArrowUp className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[10px] font-mono font-bold px-1 text-zinc-400">
+                  #{brands.indexOf(b) + 1}
+                </span>
+                <button
+                  type="button"
+                  title="Przesuń później (w prawo / w dół)"
+                  disabled={brands.indexOf(b) === brands.length - 1}
+                  onClick={() => moveBrand(brands.indexOf(b), "down")}
+                  className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-30 text-zinc-600 dark:text-zinc-300 transition-all cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleOpenModal(b)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edytuj</span>
+                </button>
+                <button
+                  onClick={() => handleDelete(b.id)}
+                  className="p-2 rounded-xl text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         ))}
