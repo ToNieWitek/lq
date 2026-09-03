@@ -9,6 +9,8 @@ import {
   Edit2,
   Search,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   CheckSquare,
   Square,
   DollarSign,
@@ -65,7 +67,17 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
   // Wyszukiwarka, filtr statusu i sortowanie
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "number" | "revenue_desc" | "revenue_asc">("newest");
+  const [sortField, setSortField] = useState<"date" | "number" | "customer" | "status" | "revenue">("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  const toggleSort = (field: "date" | "number" | "customer" | "status" | "revenue") => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder(field === "date" || field === "revenue" ? "desc" : "asc");
+    }
+  };
 
   // Masowe zaznaczanie
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -314,24 +326,23 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
         return matchesSearch && matchesStatus;
       })
       .sort((a, b) => {
-        if (sortBy === "newest") {
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        let cmp = 0;
+        if (sortField === "date") {
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        } else if (sortField === "number") {
+          cmp = a.order_number.localeCompare(b.order_number, "pl");
+        } else if (sortField === "customer") {
+          const nameA = a.customer_name || a.customer_email || "";
+          const nameB = b.customer_name || b.customer_email || "";
+          cmp = nameA.localeCompare(nameB, "pl");
+        } else if (sortField === "status") {
+          cmp = a.status.localeCompare(b.status, "pl");
+        } else if (sortField === "revenue") {
+          cmp = (a.revenue ?? 0) - (b.revenue ?? 0);
         }
-        if (sortBy === "oldest") {
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        }
-        if (sortBy === "number") {
-          return a.order_number.localeCompare(b.order_number);
-        }
-        if (sortBy === "revenue_desc") {
-          return (b.revenue ?? 0) - (a.revenue ?? 0);
-        }
-        if (sortBy === "revenue_asc") {
-          return (a.revenue ?? 0) - (b.revenue ?? 0);
-        }
-        return 0;
+        return sortOrder === "asc" ? cmp : -cmp;
       });
-  }, [orders, searchQuery, filterStatus, sortBy]);
+  }, [orders, searchQuery, filterStatus, sortField, sortOrder]);
 
   return (
     <div className="space-y-6">
@@ -387,13 +398,22 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
           <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800">
             <ArrowUpDown className="w-3.5 h-3.5 text-zinc-400" />
             <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              value={`${sortField}_${sortOrder}`}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "newest") { setSortField("date"); setSortOrder("desc"); }
+                else if (val === "oldest") { setSortField("date"); setSortOrder("asc"); }
+                else if (val === "number_asc") { setSortField("number"); setSortOrder("asc"); }
+                else if (val === "number_desc") { setSortField("number"); setSortOrder("desc"); }
+                else if (val === "revenue_desc") { setSortField("revenue"); setSortOrder("desc"); }
+                else if (val === "revenue_asc") { setSortField("revenue"); setSortOrder("asc"); }
+              }}
               className="bg-transparent text-xs font-semibold focus:outline-none"
             >
-              <option value="newest">Najnowsze</option>
-              <option value="oldest">Najstarsze</option>
-              <option value="number">Numer zamówienia</option>
+              <option value="date_desc">Najnowsze (data)</option>
+              <option value="date_asc">Najstarsze (data)</option>
+              <option value="number_asc">Numer zamówienia (rosnąco)</option>
+              <option value="number_desc">Numer zamówienia (malejąco)</option>
               <option value="revenue_desc">Przychód (najwyższy)</option>
               <option value="revenue_asc">Przychód (najniższy)</option>
             </select>
@@ -464,10 +484,58 @@ export default function AdminOrders({ orders, setOrders, customers, statuses }: 
                     )}
                   </button>
                 </th>
-                <th className="p-4">Numer & Data</th>
-                <th className="p-4">Kupujący</th>
-                <th className="p-4">Status & Etapy</th>
-                <th className="p-4">Przychód (widziany przez klienta)</th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("number")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Numer & Data</span>
+                    {sortField === "number" || sortField === "date" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("customer")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Kupujący</span>
+                    {sortField === "customer" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("status")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Status & Etapy</span>
+                    {sortField === "status" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("revenue")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Przychód</span>
+                    {sortField === "revenue" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
                 <th className="p-4">Zawartość</th>
                 <th className="p-4 text-right">Akcje</th>
               </tr>

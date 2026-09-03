@@ -65,6 +65,17 @@ export async function upsertProductDB(product: Product) {
   }
 }
 
+export async function upsertBulkProductsDB(products: Product[]) {
+  try {
+    const { error } = await supabase.from("products").upsert(products);
+    if (error) {
+      console.error("upsertBulkProductsDB error:", error);
+    }
+  } catch (e) {
+    console.error("upsertBulkProductsDB exception:", e);
+  }
+}
+
 export async function deleteProductDB(id: string) {
   try {
     await supabase.from("products").delete().eq("id", id);

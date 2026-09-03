@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from "react";
 import { Product, Brand } from "@/types";
 import { createClient } from "@/lib/supabase/client";
-import { setSettingDB, deleteBulkProductsDB, upsertProductDB } from "@/lib/supabase/syncService";
+import { setSettingDB, deleteBulkProductsDB, upsertProductDB, upsertBulkProductsDB } from "@/lib/supabase/syncService";
 import {
   Plus,
   Trash2,
@@ -12,12 +12,15 @@ import {
   Sparkles,
   Search,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Calendar,
   CheckSquare,
   Square,
   Image as ImageIcon,
   Palette,
   Smile,
+  ListPlus,
 } from "lucide-react";
 
 interface Props {
@@ -47,11 +50,29 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
   const [showDateModal, setShowDateModal] = useState(false);
   const [newDateInput, setNewDateInput] = useState("");
 
-  // Wyszukiwarka i sortowanie
+  // Wyszukiwarka i sortowanie po kolumnach
   const [searchQuery, setSearchQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState("all");
   const [filterAvailability, setFilterAvailability] = useState("all");
-  const [sortBy, setSortBy] = useState<"name_asc" | "name_desc" | "brand" | "newest">("name_asc");
+  const [sortField, setSortField] = useState<"name" | "brand" | "strength" | "status" | "newest">("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (field: "name" | "brand" | "strength" | "status" | "newest") => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  // Szybkie dodawanie wielu smaków (linijka po linijce)
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
+  const [quickAddBrand, setQuickAddBrand] = useState(brands[0]?.id || "elfliq");
+  const [quickAddLines, setQuickAddLines] = useState("");
+  const [quickAddNicotine, setQuickAddNicotine] = useState("50MG");
+  const [quickAddVolume, setQuickAddVolume] = useState("30ML");
+  const [isQuickAdding, setIsQuickAdding] = useState(false);
 
   // Masowe zaznaczanie
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -244,6 +265,49 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
     localStorage.setItem("demo_products", JSON.stringify(updated));
   };
 
+  // Obsługa szybkiego dodawania smaków (linijka po linijce)
+  const handleQuickAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const lines = quickAddLines
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) return;
+    setIsQuickAdding(true);
+
+    try {
+      const now = new Date().toISOString();
+      const newItems: Product[] = lines.map((line, idx) => ({
+        id: "prod-" + Date.now() + "-" + idx + "-" + Math.random().toString(36).substring(2, 6),
+        name: line,
+        brand_id: quickAddBrand,
+        image_url: "",
+        emoji: "",
+        gradient_colors: [],
+        nicotine_strength: quickAddNicotine,
+        volume_ml: quickAddVolume,
+        is_available: true,
+        is_new: false,
+        price: 19.99,
+        created_at: now,
+      }));
+
+      const updated = [...newItems, ...products];
+      setProducts(updated);
+      localStorage.setItem("demo_products", JSON.stringify(updated));
+
+      await upsertBulkProductsDB(newItems);
+
+      setShowQuickAddModal(false);
+      setQuickAddLines("");
+    } catch (err) {
+      console.error("Błąd podczas szybkiego dodawania produktów:", err);
+    } finally {
+      setIsQuickAdding(false);
+    }
+  };
+
   // Filtrowanie i sortowanie
   const filteredProducts = useMemo(() => {
     return products
@@ -261,15 +325,21 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
         return matchesSearch && matchesBrand && matchesAvail;
       })
       .sort((a, b) => {
-        if (sortBy === "name_asc") return a.name.localeCompare(b.name, "pl");
-        if (sortBy === "name_desc") return b.name.localeCompare(a.name, "pl");
-        if (sortBy === "brand") return a.brand_id.localeCompare(b.brand_id, "pl");
-        if (sortBy === "newest") {
-          return (b.is_new ? 1 : 0) - (a.is_new ? 1 : 0);
+        let cmp = 0;
+        if (sortField === "name") {
+          cmp = a.name.localeCompare(b.name, "pl");
+        } else if (sortField === "brand") {
+          cmp = a.brand_id.localeCompare(b.brand_id, "pl");
+        } else if (sortField === "strength") {
+          cmp = (a.nicotine_strength || "").localeCompare(b.nicotine_strength || "", "pl");
+        } else if (sortField === "status") {
+          cmp = (a.is_available ? 1 : 0) - (b.is_available ? 1 : 0);
+        } else if (sortField === "newest") {
+          cmp = (a.is_new ? 1 : 0) - (b.is_new ? 1 : 0);
         }
-        return 0;
+        return sortOrder === "asc" ? cmp : -cmp;
       });
-  }, [products, searchQuery, filterBrand, filterAvailability, sortBy]);
+  }, [products, searchQuery, filterBrand, filterAvailability, sortField, sortOrder]);
 
   return (
     <div className="space-y-6">
@@ -298,6 +368,20 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
 
           <button
             onClick={() => {
+              setQuickAddBrand(brands[0]?.id || "elfliq");
+              setQuickAddLines("");
+              setQuickAddNicotine("50MG");
+              setQuickAddVolume("30ML");
+              setShowQuickAddModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+          >
+            <ListPlus className="w-4 h-4" />
+            <span>Szybkie dodawanie</span>
+          </button>
+
+          <button
+            onClick={() => {
               setEditingProduct(null);
               setForm({
                 name: "",
@@ -319,7 +403,7 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Dodaj liquid</span>
+            <span>Dodaj pojedynczy liquid</span>
           </button>
         </div>
       </div>
@@ -367,14 +451,24 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
           <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-50 dark:bg-zinc-950 rounded-xl border border-zinc-200 dark:border-zinc-800">
             <ArrowUpDown className="w-3.5 h-3.5 text-zinc-400" />
             <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              value={`${sortField}_${sortOrder}`}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "name_asc") { setSortField("name"); setSortOrder("asc"); }
+                else if (val === "name_desc") { setSortField("name"); setSortOrder("desc"); }
+                else if (val === "brand_asc") { setSortField("brand"); setSortOrder("asc"); }
+                else if (val === "newest_desc") { setSortField("newest"); setSortOrder("desc"); }
+                else if (val === "strength_asc") { setSortField("strength"); setSortOrder("asc"); }
+                else if (val === "status_asc") { setSortField("status"); setSortOrder("asc"); }
+              }}
               className="bg-transparent text-xs font-semibold focus:outline-none"
             >
               <option value="name_asc">Nazwa (A-Z)</option>
               <option value="name_desc">Nazwa (Z-A)</option>
-              <option value="brand">Według marki</option>
-              <option value="newest">Nowości na początku</option>
+              <option value="brand_asc">Według marki</option>
+              <option value="newest_desc">Nowości na początku</option>
+              <option value="strength_asc">Według mocy</option>
+              <option value="status_asc">Tylko dostępne na początku</option>
             </select>
           </div>
         </div>
@@ -444,11 +538,71 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
                   </button>
                 </th>
                 <th className="p-4">Zdjęcie / Tło</th>
-                <th className="p-4">Smak & Emotka</th>
-                <th className="p-4">Marka</th>
-                <th className="p-4">Parametry</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Nowość</th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("name")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Smak & Emotka</span>
+                    {sortField === "name" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("brand")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Marka</span>
+                    {sortField === "brand" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("strength")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Parametry</span>
+                    {sortField === "strength" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("status")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Status</span>
+                    {sortField === "status" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
+                <th className="p-4">
+                  <button
+                    onClick={() => toggleSort("newest")}
+                    className="flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span>Nowość</span>
+                    {sortField === "newest" ? (
+                      sortOrder === "asc" ? <ArrowUp className="w-3.5 h-3.5 text-purple-600" /> : <ArrowDown className="w-3.5 h-3.5 text-purple-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />
+                    )}
+                  </button>
+                </th>
                 <th className="p-4 text-right">Akcje</th>
               </tr>
             </thead>
@@ -925,6 +1079,107 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
                   className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs cursor-pointer"
                 >
                   Zapisz
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Szybkie dodawanie wielu smaków (linijka po linijce) */}
+      {showQuickAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl">
+            <div>
+              <h3 className="text-lg font-black text-zinc-900 dark:text-white flex items-center gap-2">
+                <ListPlus className="w-5 h-5 text-teal-500" />
+                <span>Szybkie dodawanie liquidów</span>
+              </h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Wybierz markę i wklej lub wpisz listę smaków — każdy smak w nowej linijce.
+              </p>
+            </div>
+
+            <form onSubmit={handleQuickAddSubmit} className="space-y-4">
+              {/* Wybór marki */}
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Wybierz markę:
+                </label>
+                <select
+                  value={quickAddBrand}
+                  onChange={(e) => setQuickAddBrand(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  {brands.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Domyślne parametry */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Moc:
+                  </label>
+                  <input
+                    type="text"
+                    value={quickAddNicotine}
+                    onChange={(e) => setQuickAddNicotine(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Pojemność:
+                  </label>
+                  <input
+                    type="text"
+                    value={quickAddVolume}
+                    onChange={(e) => setQuickAddVolume(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Pole tekstowe wieloliniowe */}
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                  Lista smaków (jeden na linijkę):
+                </label>
+                <textarea
+                  required
+                  rows={8}
+                  placeholder={"Truskawka Kiwi\nArbuz Ice\nJagoda Malina\nMango Passionfruit\nCola Ice"}
+                  value={quickAddLines}
+                  onChange={(e) => setQuickAddLines(e.target.value)}
+                  className="w-full px-3.5 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+                <p className="text-[11px] text-zinc-400 mt-1">
+                  Wpisano pozycji:{" "}
+                  <span className="font-bold text-teal-600 dark:text-teal-400">
+                    {quickAddLines.split("\n").filter((l) => l.trim().length > 0).length}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddModal(false)}
+                  className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-semibold cursor-pointer"
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  disabled={isQuickAdding || quickAddLines.trim().length === 0}
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-bold text-xs shadow-md cursor-pointer transition-all"
+                >
+                  {isQuickAdding ? "Dodawanie..." : "Dodaj wszystkie smaki"}
                 </button>
               </div>
             </form>
