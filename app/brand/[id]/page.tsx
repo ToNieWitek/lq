@@ -218,9 +218,9 @@ export default function BrandDetailPage({
                   <div className="absolute inset-0 bg-black/60 dark:bg-black/70 backdrop-blur-[2px] pointer-events-none" />
                 )}
 
-                {/* Żółta plakietka "Nowe" na borderze kafelka */}
+                {/* Żółta plakietka "Nowe" wewnątrz kafelka na samej górze */}
                 {isNew && (
-                  <span className="absolute -top-3 left-6 px-3 py-0.5 rounded-full text-[11px] font-black tracking-wider uppercase bg-amber-400 text-zinc-950 shadow-md z-10">
+                  <span className="absolute top-3.5 right-3.5 px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-amber-400 text-zinc-950 shadow-md z-20">
                     Nowe
                   </span>
                 )}
