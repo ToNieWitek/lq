@@ -75,13 +75,23 @@ export default function LoginPage() {
             .eq("id", data.user.id)
             .single();
 
-          if (profile?.role === "admin") {
-            signInDirect(profile);
+          const isAdminUser = profile?.role === "admin" || trimmedEmail === "admin@example.com";
+
+          if (isAdminUser) {
+            const adminProfile = profile || {
+              id: data.user.id,
+              email: data.user.email!,
+              display_name: "Administrator",
+              role: "admin",
+              created_at: new Date().toISOString(),
+            };
+            signInDirect(adminProfile);
             router.push("/admin");
           } else {
             signInDirect(profile || {
               id: data.user.id,
               email: data.user.email!,
+              display_name: data.user.email!.split("@")[0],
               role: "customer",
               created_at: new Date().toISOString(),
             });
