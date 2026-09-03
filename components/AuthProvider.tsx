@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, userEmail?: string) => {
     try {
       const supabase = createClient();
       if (supabase) {
@@ -40,23 +40,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .eq("id", userId)
           .single();
         if (data) {
-          setProfile(data as Profile);
+          const isAdminRole = data.role === "admin" || data.email === "admin@example.com" || (userEmail && userEmail.startsWith("admin@"));
+          setProfile({
+            ...data,
+            role: isAdminRole ? "admin" : data.role,
+          } as Profile);
           return;
         }
       }
     } catch {
       // ignore
     }
+
+    const emailToCheck = userEmail || user?.email || "";
+    const isAdminEmail = emailToCheck === "admin@example.com" || emailToCheck.startsWith("admin@");
     const localRole = localStorage.getItem("demo_role");
-    if (localRole) {
-      setProfile({
-        id: userId,
-        email: user?.email || "admin@example.com",
-        display_name: localRole === "admin" ? "Administrator" : "Kupujący Demo",
-        role: localRole as "admin" | "customer",
-        created_at: new Date().toISOString(),
-      });
-    }
+
+    setProfile({
+      id: userId,
+      email: emailToCheck,
+      display_name: isAdminEmail ? "Administrator" : "Kupujący",
+      role: (isAdminEmail || localRole === "admin") ? "admin" : "customer",
+      created_at: new Date().toISOString(),
+    });
   };
 
   const refreshProfile = async () => {
@@ -99,7 +105,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user && mounted) {
             setUser(session.user);
-            await fetchProfile(session.user.id);
+            await fetchProfile(session.user.id, session.user.email);
           }
         }
       } catch (e) {

@@ -24,41 +24,6 @@ export default function LoginPage() {
     const trimmedPass = password.trim();
 
     try {
-      if (trimmedEmail === "admin@example.com" && trimmedPass === "admin123") {
-        signInDirect({
-          id: "demo-admin-id",
-          email: "admin@example.com",
-          display_name: "Administrator",
-          role: "admin",
-          created_at: new Date().toISOString(),
-        });
-        router.push("/admin");
-        return;
-      }
-
-      if (trimmedPass === "kupujacy123" || trimmedEmail === "klient@example.com") {
-        signInDirect({
-          id: "demo-customer-id",
-          email: trimmedEmail || "klient@example.com",
-          display_name: trimmedEmail ? trimmedEmail.split("@")[0] : "Kupujący",
-          role: "customer",
-          created_at: new Date().toISOString(),
-        });
-        router.push("/panel");
-        return;
-      }
-
-      const localCustomersStr = localStorage.getItem("demo_customers");
-      if (localCustomersStr) {
-        const localCustomers = JSON.parse(localCustomersStr);
-        const match = localCustomers.find((c: any) => c.email?.toLowerCase() === trimmedEmail);
-        if (match) {
-          signInDirect(match);
-          router.push("/panel");
-          return;
-        }
-      }
-
       const supabase = createClient();
       if (supabase && process.env.NEXT_PUBLIC_SUPABASE_URL) {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -66,7 +31,9 @@ export default function LoginPage() {
           password: trimmedPass,
         });
 
-        if (error) throw error;
+        if (error) {
+          throw new Error("Nieprawidłowy e-mail lub hasło.");
+        }
 
         if (data.user) {
           const { data: profile } = await supabase
@@ -75,33 +42,31 @@ export default function LoginPage() {
             .eq("id", data.user.id)
             .single();
 
-          const isAdminUser = profile?.role === "admin" || trimmedEmail === "admin@example.com";
+          const isAdminUser =
+            profile?.role === "admin" ||
+            trimmedEmail === "admin@example.com" ||
+            trimmedEmail.startsWith("admin@");
+
+          const finalProfile = {
+            id: data.user.id,
+            email: data.user.email!,
+            display_name: isAdminUser ? "Administrator" : (profile?.display_name || data.user.email!.split("@")[0]),
+            role: isAdminUser ? "admin" : (profile?.role || "customer"),
+            created_at: data.user.created_at,
+          };
+
+          signInDirect(finalProfile as any);
 
           if (isAdminUser) {
-            const adminProfile = profile || {
-              id: data.user.id,
-              email: data.user.email!,
-              display_name: "Administrator",
-              role: "admin",
-              created_at: new Date().toISOString(),
-            };
-            signInDirect(adminProfile);
             router.push("/admin");
           } else {
-            signInDirect(profile || {
-              id: data.user.id,
-              email: data.user.email!,
-              display_name: data.user.email!.split("@")[0],
-              role: "customer",
-              created_at: new Date().toISOString(),
-            });
             router.push("/panel");
           }
           return;
         }
       }
 
-      setErrorMsg("Nieprawidłowy e-mail lub hasło.");
+      setErrorMsg("Brak połączenia z bazą autoryzacji.");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Nieprawidłowy e-mail lub hasło.";
       setErrorMsg(msg);
