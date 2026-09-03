@@ -45,13 +45,13 @@ export async function getProductsDB(brandId?: string): Promise<Product[]> {
       query = query.eq("brand_id", brandId);
     }
     const { data, error } = await query;
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       return data as Product[];
     }
   } catch (e) {
     console.warn("getProductsDB error:", e);
   }
-  return brandId ? INITIAL_PRODUCTS.filter(p => p.brand_id === brandId) : INITIAL_PRODUCTS;
+  return [];
 }
 
 export async function upsertProductDB(product: Product) {

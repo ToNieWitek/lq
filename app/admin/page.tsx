@@ -75,16 +75,16 @@ export default function AdminDashboardPage() {
 
     // 3. Products
     try {
-      const { data: prods } = await supabase.from("products").select("*").order("name");
-      if (prods && prods.length > 0) {
+      const { data: prods, error } = await supabase.from("products").select("*").order("name");
+      if (!error && prods) {
         setProducts(prods as Product[]);
       } else {
         const localProds = localStorage.getItem("demo_products");
-        setProducts(localProds ? JSON.parse(localProds) : INITIAL_PRODUCTS);
+        setProducts(localProds ? JSON.parse(localProds) : []);
       }
     } catch {
       const localProds = localStorage.getItem("demo_products");
-      setProducts(localProds ? JSON.parse(localProds) : INITIAL_PRODUCTS);
+      setProducts(localProds ? JSON.parse(localProds) : []);
     }
 
     // 4. Orders

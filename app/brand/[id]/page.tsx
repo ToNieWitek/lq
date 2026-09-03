@@ -36,16 +36,6 @@ export default function BrandDetailPage({
     if (foundBrand) setBrand(foundBrand);
 
     // 2. Pobierz produkty
-    const localProdsStr = localStorage.getItem("demo_products");
-    let initialList = INITIAL_PRODUCTS;
-    if (localProdsStr) {
-      try {
-        initialList = JSON.parse(localProdsStr);
-      } catch {
-        // ignore
-      }
-    }
-
     const loadData = async () => {
       setLoading(true);
       try {
