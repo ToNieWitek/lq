@@ -72,6 +72,8 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
   const [quickAddLines, setQuickAddLines] = useState("");
   const [quickAddNicotine, setQuickAddNicotine] = useState("50MG");
   const [quickAddVolume, setQuickAddVolume] = useState("30ML");
+  const [quickAddAvailable, setQuickAddAvailable] = useState(true);
+  const [quickAddNew, setQuickAddNew] = useState(false);
   const [isQuickAdding, setIsQuickAdding] = useState(false);
 
   // Masowe zaznaczanie
@@ -287,8 +289,8 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
         gradient_colors: [],
         nicotine_strength: quickAddNicotine,
         volume_ml: quickAddVolume,
-        is_available: true,
-        is_new: false,
+        is_available: quickAddAvailable,
+        is_new: quickAddNew,
         price: 19.99,
         created_at: now,
       }));
@@ -1143,6 +1145,29 @@ export default function AdminProducts({ products, setProducts, brands }: Props) 
                     className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-xs font-mono font-bold"
                   />
                 </div>
+              </div>
+
+              {/* Opcje dostępności i nowości */}
+              <div className="flex flex-wrap items-center gap-6 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-zinc-700 dark:text-zinc-300 select-none">
+                  <input
+                    type="checkbox"
+                    checked={quickAddAvailable}
+                    onChange={(e) => setQuickAddAvailable(e.target.checked)}
+                    className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                  />
+                  <span>Dostępne od razu</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-amber-600 dark:text-amber-400 select-none">
+                  <input
+                    type="checkbox"
+                    checked={quickAddNew}
+                    onChange={(e) => setQuickAddNew(e.target.checked)}
+                    className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <span>Oznacz jako NOWOŚĆ ✨</span>
+                </label>
               </div>
 
               {/* Pole tekstowe wieloliniowe */}
