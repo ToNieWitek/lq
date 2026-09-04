@@ -157,8 +157,13 @@ export async function deleteBulkOrdersDB(ids: string[]) {
 export async function getStatusesDB(): Promise<StatusDefinition[]> {
   try {
     const { data, error } = await supabase.from("status_definitions").select("*");
-    if (!error && data && data.length > 0) {
-      return data as StatusDefinition[];
+    if (!error && data) {
+      // Jeśli w bazie są zdefiniowane statusy, zwróć je
+      if (data.length > 0) {
+        return data as StatusDefinition[];
+      }
+      // Jeśli tabela w bazie istnieje, ale użytkownik usunął wszystkie statusy, zwróć pustą listę
+      return [];
     }
   } catch (e) {
     console.warn("getStatusesDB error:", e);
@@ -168,17 +173,23 @@ export async function getStatusesDB(): Promise<StatusDefinition[]> {
 
 export async function upsertStatusDB(status: StatusDefinition) {
   try {
-    await supabase.from("status_definitions").upsert(status);
+    const { error } = await supabase.from("status_definitions").upsert(status);
+    if (error) {
+      console.error("upsertStatusDB error:", error);
+    }
   } catch (e) {
-    console.error("upsertStatusDB error:", e);
+    console.error("upsertStatusDB exception:", e);
   }
 }
 
 export async function deleteStatusDB(id: string) {
   try {
-    await supabase.from("status_definitions").delete().eq("id", id);
+    const { error } = await supabase.from("status_definitions").delete().eq("id", id);
+    if (error) {
+      console.error("deleteStatusDB error:", error);
+    }
   } catch (e) {
-    console.error("deleteStatusDB error:", e);
+    console.error("deleteStatusDB exception:", e);
   }
 }
 

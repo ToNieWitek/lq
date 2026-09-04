@@ -5,7 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Product, Order, Profile, StatusDefinition, Brand } from "@/types";
 import { INITIAL_PRODUCTS, INITIAL_BRANDS } from "@/lib/initialData";
 import { createClient } from "@/lib/supabase/client";
-import { getBrandsDB } from "@/lib/supabase/syncService";
+import { getBrandsDB, getStatusesDB } from "@/lib/supabase/syncService";
 import AdminProducts from "@/components/AdminProducts";
 import AdminBrands from "@/components/AdminBrands";
 import AdminOrders from "@/components/AdminOrders";
@@ -62,16 +62,17 @@ export default function AdminDashboardPage() {
     }
 
     // 2. Status definitions
-    const localDefs = localStorage.getItem("custom_status_definitions");
-    if (localDefs) {
-      try {
-        setStatuses(JSON.parse(localDefs));
-      } catch {
-        setStatuses(DEFAULT_STATUS_DEFINITIONS);
+    try {
+      const sData = await getStatusesDB();
+      if (sData) {
+        setStatuses(sData);
+      } else {
+        const localDefs = localStorage.getItem("custom_status_definitions");
+        setStatuses(localDefs ? JSON.parse(localDefs) : DEFAULT_STATUS_DEFINITIONS);
       }
-    } else {
-      setStatuses(DEFAULT_STATUS_DEFINITIONS);
-      localStorage.setItem("custom_status_definitions", JSON.stringify(DEFAULT_STATUS_DEFINITIONS));
+    } catch {
+      const localDefs = localStorage.getItem("custom_status_definitions");
+      setStatuses(localDefs ? JSON.parse(localDefs) : DEFAULT_STATUS_DEFINITIONS);
     }
 
     // 3. Products
